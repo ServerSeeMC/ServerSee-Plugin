@@ -7,14 +7,20 @@ import me.lucko.spark.api.statistic.misc.DoubleAverageInfo;
 import me.lucko.spark.api.statistic.types.GenericStatistic;
 import oshi.SystemInfo;
 import oshi.hardware.GlobalMemory;
-import oshi.software.os.FileSystem;
-import oshi.software.os.OSFileStore;
 
 import java.io.File;
 
 public class SparkManager {
     private Spark spark;
     private final SystemInfo systemInfo;
+    
+    // 缓存硬件指标
+    private long lastHardwareUpdate = 0;
+    private double cachedHostMemTotal = 0;
+    private double cachedHostMemUsed = 0;
+    private double cachedDiskTotal = 0;
+    private double cachedDiskUsed = 0;
+    private static final long HARDWARE_CACHE_MS = 10000; // 10秒缓存
 
     public SparkManager() {
         this.systemInfo = new SystemInfo();
@@ -45,12 +51,14 @@ public class SparkManager {
 
     public double getCpuProcess() {
         if (spark == null || spark.cpuProcess() == null) return 0.0;
-        return spark.cpuProcess().poll(StatisticWindow.CpuUsage.MINUTES_1) * 100.0;
+        double usage = spark.cpuProcess().poll(StatisticWindow.CpuUsage.MINUTES_1);
+        return usage * 100.0;
     }
 
     public double getCpuSystem() {
         if (spark == null || spark.cpuSystem() == null) return 0.0;
-        return spark.cpuSystem().poll(StatisticWindow.CpuUsage.MINUTES_1) * 100.0;
+        double usage = spark.cpuSystem().poll(StatisticWindow.CpuUsage.MINUTES_1);
+        return usage * 100.0;
     }
 
     private double getTps(StatisticWindow.TicksPerSecond window) {
@@ -72,41 +80,43 @@ public class SparkManager {
         return Runtime.getRuntime().maxMemory() / 1024.0 / 1024.0;
     }
 
+    private void updateHardwareMetricsIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastHardwareUpdate < HARDWARE_CACHE_MS) return;
+
+        try {
+            GlobalMemory memory = systemInfo.getHardware().getMemory();
+            cachedHostMemTotal = memory.getTotal() / 1024.0 / 1024.0;
+            cachedHostMemUsed = (memory.getTotal() - memory.getAvailable()) / 1024.0 / 1024.0;
+
+            File file = new File(".");
+            cachedDiskTotal = file.getTotalSpace() / 1024.0 / 1024.0 / 1024.0;
+            cachedDiskUsed = (file.getTotalSpace() - file.getFreeSpace()) / 1024.0 / 1024.0 / 1024.0;
+
+            lastHardwareUpdate = now;
+        } catch (Throwable ignored) {}
+    }
+
     // Host Memory (System Memory)
     public double getHostMemoryTotal() {
-        try {
-            return systemInfo.getHardware().getMemory().getTotal() / 1024.0 / 1024.0;
-        } catch (Throwable e) {
-            return 0.0;
-        }
+        updateHardwareMetricsIfNeeded();
+        return cachedHostMemTotal;
     }
 
     public double getHostMemoryUsed() {
-        try {
-            GlobalMemory memory = systemInfo.getHardware().getMemory();
-            return (memory.getTotal() - memory.getAvailable()) / 1024.0 / 1024.0;
-        } catch (Throwable e) {
-            return 0.0;
-        }
+        updateHardwareMetricsIfNeeded();
+        return cachedHostMemUsed;
     }
 
     // Disk Usage (Current Partition)
     public double getDiskTotal() {
-        try {
-            File file = new File(".");
-            return file.getTotalSpace() / 1024.0 / 1024.0 / 1024.0; // GB
-        } catch (Throwable e) {
-            return 0.0;
-        }
+        updateHardwareMetricsIfNeeded();
+        return cachedDiskTotal;
     }
 
     public double getDiskUsed() {
-        try {
-            File file = new File(".");
-            return (file.getTotalSpace() - file.getFreeSpace()) / 1024.0 / 1024.0 / 1024.0; // GB
-        } catch (Throwable e) {
-            return 0.0;
-        }
+        updateHardwareMetricsIfNeeded();
+        return cachedDiskUsed;
     }
 
     public Spark getSpark() {

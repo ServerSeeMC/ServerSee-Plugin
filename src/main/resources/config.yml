@@ -14,3 +14,7 @@ show-plugins: false
 
 # 重启服务器时执行的命令 (默认为 spigot 的 restart 命令)
 restart-command: "restart"
+
+# 控制台日志同步设置
+# 初始同步的历史日志行数
+log-history-lines: 50

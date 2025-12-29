@@ -1,10 +1,14 @@
 package cn.lemwood.serversee;
 
+import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import cn.lemwood.serversee.api.ApiServer;
 import cn.lemwood.serversee.auth.TokenManager;
 import cn.lemwood.serversee.database.DatabaseManager;
 import cn.lemwood.serversee.metrics.SparkManager;
+
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
 
 public class ServerSee extends JavaPlugin {
     private static ServerSee instance;
@@ -39,11 +43,47 @@ public class ServerSee extends JavaPlugin {
 
             // 启动异步采集任务
             startCollectionTask();
+            
+            // 设置日志捕获
+            setupLogCapture();
 
             getLogger().info("ServerSee API 已启动，监听端口: " + port);
         });
 
         getLogger().info("ServerSee 插件已加载，等待初始化...");
+    }
+
+    private void setupLogCapture() {
+        if (apiServer == null) return;
+        
+        Handler logHandler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                if (apiServer != null) {
+                    // 获取格式化后的消息
+                    String message = record.getMessage();
+                    Object[] params = record.getParameters();
+                    if (params != null && params.length > 0) {
+                        try {
+                            message = java.text.MessageFormat.format(message, params);
+                        } catch (Exception ignored) {}
+                    }
+                    
+                    String formatted = String.format("[%s] %s", record.getLevel().getName(), message);
+                    apiServer.broadcastLog(formatted);
+                }
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() throws SecurityException {}
+        };
+        
+        // 捕获根日志记录器的日志，以获取更多信息
+        getServer().getLogger().addHandler(logHandler);
+        Bukkit.getLogger().addHandler(logHandler);
     }
 
     private void startCollectionTask() {
@@ -65,7 +105,14 @@ public class ServerSee extends JavaPlugin {
     @Override
     public void onDisable() {
         if (apiServer != null) {
-            apiServer.stop();
+            try {
+                apiServer.stop(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        if (databaseManager != null) {
+            databaseManager.close();
         }
         getLogger().info("ServerSee 已禁用。");
     }

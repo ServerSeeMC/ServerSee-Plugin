@@ -9,6 +9,7 @@ import java.io.File;
 
 public class DatabaseManager {
     private final String url;
+    private Connection connection;
 
     public DatabaseManager(File dataFolder) {
         if (!dataFolder.exists()) {
@@ -16,6 +17,14 @@ public class DatabaseManager {
         }
         this.url = "jdbc:sqlite:" + new File(dataFolder, "data.db").getAbsolutePath();
         initialize();
+        startCleanupTask();
+    }
+
+    private synchronized Connection getConnection() throws SQLException {
+        if (connection == null || connection.isClosed()) {
+            connection = DriverManager.getConnection(url);
+        }
+        return connection;
     }
 
     private void initialize() {
@@ -29,9 +38,30 @@ public class DatabaseManager {
                 "memory_used REAL," +
                 "memory_max REAL" +
                 ");";
-        try (Connection conn = DriverManager.getConnection(url);
-             Statement stmt = conn.createStatement()) {
+        try (Statement stmt = getConnection().createStatement()) {
             stmt.execute(sql);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void startCleanupTask() {
+        // 每小时清理一次超过 24 小时的数据
+        org.bukkit.Bukkit.getScheduler().runTaskTimerAsynchronously(
+            cn.lemwood.serversee.ServerSee.getInstance(),
+            this::cleanupOldData,
+            20 * 60 * 60, // 1小时
+            20 * 60 * 60
+        );
+    }
+
+    private void cleanupOldData() {
+        String sql = "DELETE FROM metrics WHERE timestamp < datetime('now', '-24 hours')";
+        try (Statement stmt = getConnection().createStatement()) {
+            int deleted = stmt.executeUpdate(sql);
+            if (deleted > 0) {
+                cn.lemwood.serversee.ServerSee.getInstance().getLogger().info("已清理 " + deleted + " 条旧的指标数据");
+            }
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -39,8 +69,7 @@ public class DatabaseManager {
 
     public void saveMetrics(double tps, double mspt, double cpuProcess, double cpuSystem, double memUsed, double memMax) {
         String sql = "INSERT INTO metrics(tps, mspt, cpu_process, cpu_system, memory_used, memory_max) VALUES(?,?,?,?,?,?)";
-        try (Connection conn = DriverManager.getConnection(url);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setDouble(1, tps);
             pstmt.setDouble(2, mspt);
             pstmt.setDouble(3, cpuProcess);
@@ -56,8 +85,7 @@ public class DatabaseManager {
     public List<Map<String, Object>> getRecentTps(int limit) {
         List<Map<String, Object>> results = new ArrayList<>();
         String sql = "SELECT timestamp, tps FROM metrics ORDER BY timestamp DESC LIMIT ?";
-        try (Connection conn = DriverManager.getConnection(url);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, limit);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
@@ -75,8 +103,7 @@ public class DatabaseManager {
     public List<Map<String, Object>> getRecentMetrics(int limit) {
         List<Map<String, Object>> results = new ArrayList<>();
         String sql = "SELECT * FROM metrics ORDER BY timestamp DESC LIMIT ?";
-        try (Connection conn = DriverManager.getConnection(url);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, limit);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
@@ -94,5 +121,15 @@ public class DatabaseManager {
             e.printStackTrace();
         }
         return results;
+    }
+
+    public void close() {
+        try {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 }
