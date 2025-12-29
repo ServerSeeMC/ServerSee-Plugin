@@ -1,18 +1,16 @@
 package cn.lemwood.serversee.metrics;
 
-import me.lucko.spark.api.Spark;
-import me.lucko.spark.api.SparkProvider;
-import me.lucko.spark.api.statistic.StatisticWindow;
-import me.lucko.spark.api.statistic.misc.DoubleAverageInfo;
-import me.lucko.spark.api.statistic.types.GenericStatistic;
 import oshi.SystemInfo;
 import oshi.hardware.GlobalMemory;
 
 import java.io.File;
+import java.lang.management.ManagementFactory;
+import com.sun.management.OperatingSystemMXBean;
 
 public class SparkManager {
-    private Spark spark;
+    private final TickMonitor tickMonitor;
     private final SystemInfo systemInfo;
+    private final OperatingSystemMXBean osBean;
     
     // 缓存硬件指标
     private long lastHardwareUpdate = 0;
@@ -22,48 +20,39 @@ public class SparkManager {
     private double cachedDiskUsed = 0;
     private static final long HARDWARE_CACHE_MS = 10000; // 10秒缓存
 
-    public SparkManager() {
+    public SparkManager(TickMonitor tickMonitor) {
+        this.tickMonitor = tickMonitor;
         this.systemInfo = new SystemInfo();
+        this.osBean = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     }
 
     public boolean initialize() {
-        try {
-            this.spark = SparkProvider.get();
-            return this.spark != null;
-        } catch (IllegalStateException e) {
-            return false;
-        }
+        // 始终返回 true，因为我们不再依赖外部 Spark 插件
+        return true;
     }
 
     public double getTps5s() {
-        return getTps(StatisticWindow.TicksPerSecond.SECONDS_5);
+        return tickMonitor != null ? tickMonitor.getTps5s() : 0.0;
     }
 
     public double getTps1m() {
-        return getTps(StatisticWindow.TicksPerSecond.MINUTES_1);
+        return tickMonitor != null ? tickMonitor.getTps1m() : 0.0;
     }
 
     public double getMspt() {
-        if (spark == null) return 0.0;
-        GenericStatistic<DoubleAverageInfo, StatisticWindow.MillisPerTick> mspt = spark.mspt();
-        return mspt != null ? mspt.poll(StatisticWindow.MillisPerTick.MINUTES_1).mean() : 0.0;
+        return tickMonitor != null ? tickMonitor.getMspt() : 0.0;
     }
 
     public double getCpuProcess() {
-        if (spark == null || spark.cpuProcess() == null) return 0.0;
-        double usage = spark.cpuProcess().poll(StatisticWindow.CpuUsage.MINUTES_1);
-        return usage * 100.0;
+        if (osBean == null) return 0.0;
+        double load = osBean.getProcessCpuLoad();
+        return (load < 0) ? 0.0 : load * 100.0;
     }
 
     public double getCpuSystem() {
-        if (spark == null || spark.cpuSystem() == null) return 0.0;
-        double usage = spark.cpuSystem().poll(StatisticWindow.CpuUsage.MINUTES_1);
-        return usage * 100.0;
-    }
-
-    private double getTps(StatisticWindow.TicksPerSecond window) {
-        if (spark == null || spark.tps() == null) return 0.0;
-        return spark.tps().poll(window);
+        if (osBean == null) return 0.0;
+        double load = osBean.getSystemCpuLoad();
+        return (load < 0) ? 0.0 : load * 100.0;
     }
 
     // JVM Memory (Server Memory)
@@ -117,9 +106,5 @@ public class SparkManager {
     public double getDiskUsed() {
         updateHardwareMetricsIfNeeded();
         return cachedDiskUsed;
-    }
-
-    public Spark getSpark() {
-        return spark;
     }
 }

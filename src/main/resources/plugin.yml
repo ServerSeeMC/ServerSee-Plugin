@@ -1,7 +1,6 @@
 name: ServerSee
-version: 1.0.0-beta.2
+version: 1.1.0-beta.3
 main: cn.lemwood.serversee.ServerSee
-api-version: 1.20
-# softdepend: [spark]
+api-version: 1.13
 author: leemwood
 website: https://github.com/ServerSeeMC/ServerSee-Plugin
