@@ -6,7 +6,7 @@
 
     <groupId>cn.lemwood</groupId>
     <artifactId>serversee</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0-beta.1</version>
     <packaging>jar</packaging>
 
     <name>ServerSee</name>
@@ -103,30 +103,24 @@
                                     <shadedPattern>cn.lemwood.serversee.lib.javalin</shadedPattern>
                                 </relocation>
                                 <relocation>
-                                    <pattern>org.sqlite</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.sqlite</shadedPattern>
-                                </relocation>
-                                <relocation>
                                     <pattern>com.fasterxml.jackson</pattern>
                                     <shadedPattern>cn.lemwood.serversee.lib.jackson</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>org.slf4j</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.slf4j</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>org.eclipse.jetty</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.jetty</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>kotlin</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.kotlin</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>oshi</pattern>
                                     <shadedPattern>cn.lemwood.serversee.lib.oshi</shadedPattern>
                                 </relocation>
                             </relocations>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                         </configuration>
                     </execution>
                 </executions>
