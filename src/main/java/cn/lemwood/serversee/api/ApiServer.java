@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -40,7 +41,7 @@ public class ApiServer extends WebSocketServer {
     
     // 简易速率限制
     private final Map<String, Integer> rateLimitMap = new ConcurrentHashMap<>();
-    private static final int MAX_REQUESTS_PER_MINUTE = 60;
+    private static final int MAX_REQUESTS_PER_MINUTE = 120; // 提高限制，因为 WebSocket 连发较多
 
     public ApiServer(int port, SparkManager sparkManager, DatabaseManager databaseManager, TokenManager tokenManager) {
         super(new InetSocketAddress(port));
@@ -296,27 +297,42 @@ public class ApiServer extends WebSocketServer {
         if (!logFile.exists()) return result;
 
         try (RandomAccessFile raf = new RandomAccessFile(logFile, "r")) {
-            long length = logFile.length();
+            long length = raf.length();
+            if (length == 0) return result;
+
             long pos = length - 1;
             int count = 0;
-            StringBuilder sb = new StringBuilder();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
             while (pos >= 0 && count < lines) {
                 raf.seek(pos);
                 int b = raf.read();
                 if (b == '\n') {
-                    if (sb.length() > 0) {
-                        result.add(0, sb.reverse().toString().trim());
-                        sb.setLength(0);
+                    if (bos.size() > 0) {
+                        byte[] bytes = bos.toByteArray();
+                        // 翻转字节数组，因为我们是倒着读的
+                        for (int i = 0; i < bytes.length / 2; i++) {
+                            byte temp = bytes[i];
+                            bytes[i] = bytes[bytes.length - 1 - i];
+                            bytes[bytes.length - 1 - i] = temp;
+                        }
+                        result.add(0, new String(bytes, StandardCharsets.UTF_8).trim());
+                        bos.reset();
                         count++;
                     }
                 } else if (b != '\r') {
-                    sb.append((char) b);
+                    bos.write(b);
                 }
                 pos--;
             }
-            if (sb.length() > 0 && count < lines) {
-                result.add(0, sb.reverse().toString().trim());
+            if (bos.size() > 0 && count < lines) {
+                byte[] bytes = bos.toByteArray();
+                for (int i = 0; i < bytes.length / 2; i++) {
+                    byte temp = bytes[i];
+                    bytes[i] = bytes[bytes.length - 1 - i];
+                    bytes[bytes.length - 1 - i] = temp;
+                }
+                result.add(0, new String(bytes, StandardCharsets.UTF_8).trim());
             }
         } catch (IOException e) {
             ServerSee.getInstance().getLogger().warning("无法读取日志文件: " + e.getMessage());

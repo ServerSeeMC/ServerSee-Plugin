@@ -1,14 +1,15 @@
 package cn.lemwood.serversee;
 
-import org.bukkit.Bukkit;
-import org.bukkit.plugin.java.JavaPlugin;
 import cn.lemwood.serversee.api.ApiServer;
+import cn.lemwood.serversee.api.LogAppender;
 import cn.lemwood.serversee.auth.TokenManager;
 import cn.lemwood.serversee.database.DatabaseManager;
 import cn.lemwood.serversee.metrics.SparkManager;
-
-import java.util.logging.Handler;
-import java.util.logging.LogRecord;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.bukkit.Bukkit;
+import org.bukkit.plugin.java.JavaPlugin;
 
 public class ServerSee extends JavaPlugin {
     private static ServerSee instance;
@@ -16,6 +17,7 @@ public class ServerSee extends JavaPlugin {
     private ApiServer apiServer;
     private DatabaseManager databaseManager;
     private TokenManager tokenManager;
+    private LogAppender logAppender;
 
     @Override
     public void onEnable() {
@@ -44,7 +46,7 @@ public class ServerSee extends JavaPlugin {
             // 启动异步采集任务
             startCollectionTask();
             
-            // 设置日志捕获
+            // 设置日志捕获 (Log4j2)
             setupLogCapture();
 
             getLogger().info("ServerSee API 已启动，监听端口: " + port);
@@ -56,34 +58,19 @@ public class ServerSee extends JavaPlugin {
     private void setupLogCapture() {
         if (apiServer == null) return;
         
-        Handler logHandler = new Handler() {
-            @Override
-            public void publish(LogRecord record) {
-                if (apiServer != null) {
-                    // 获取格式化后的消息
-                    String message = record.getMessage();
-                    Object[] params = record.getParameters();
-                    if (params != null && params.length > 0) {
-                        try {
-                            message = java.text.MessageFormat.format(message, params);
-                        } catch (Exception ignored) {}
-                    }
-                    
-                    String formatted = String.format("[%s] %s", record.getLevel().getName(), message);
-                    apiServer.broadcastLog(formatted);
-                }
-            }
-
-            @Override
-            public void flush() {}
-
-            @Override
-            public void close() throws SecurityException {}
-        };
-        
-        // 捕获根日志记录器的日志，以获取更多信息
-        getServer().getLogger().addHandler(logHandler);
-        Bukkit.getLogger().addHandler(logHandler);
+        try {
+            LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+            Configuration config = ctx.getConfiguration();
+            
+            logAppender = LogAppender.createAppender("ServerSeeAppender", null, null, apiServer);
+            logAppender.start();
+            
+            config.addAppender(logAppender);
+            config.getRootLogger().addAppender(logAppender, null, null);
+            ctx.updateLoggers();
+        } catch (Exception e) {
+            getLogger().warning("无法设置 Log4j2 日志捕获: " + e.getMessage());
+        }
     }
 
     private void startCollectionTask() {
@@ -104,6 +91,16 @@ public class ServerSee extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (logAppender != null) {
+            try {
+                LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+                Configuration config = ctx.getConfiguration();
+                logAppender.stop();
+                config.getRootLogger().removeAppender("ServerSeeAppender");
+                ctx.updateLoggers();
+            } catch (Exception ignored) {}
+        }
+        
         if (apiServer != null) {
             try {
                 apiServer.stop(1000);
