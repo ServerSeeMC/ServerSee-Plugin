@@ -1,53 +1,35 @@
 # ServerSee-Plugin
 
-ServerSee 是一个为 Paper 1.20.1+ 服务器设计的性能监控插件。它集成了 Spark API，并通过内置的 REST API 接口提供实时的服务器状态和性能指标。
+ServerSee 是一个为 Paper 1.20.1+ 服务器设计的性能监控插件。它通过内置的 WebSocket 接口提供极速的服务器状态同步和远程管理功能。
 
 ## 主要功能
 
-- **实时性能监控**: 获取 TPS (5s/1m)、MSPT、CPU 使用率（进程/系统）及详细的内存占用情况。
-- **服务器元数据**: 提供 MOTD、版本号、在线人数、游戏模式等基本信息。
-- **异步历史记录**: 自动将性能数据存储在 SQLite 数据库中，支持查询历史波动情况。
-- **隐私控制**: 通过配置文件控制是否在 API 中暴露插件列表。
-- **无冲突设计**: 采用 Maven Shade 重定向技术，确保依赖库（Javalin, Jetty 等）与服务器或其他插件互不干扰。
+- **极速 WebSocket 通信**: 采用自定义 JSON 协议，全面替代传统的 HTTP REST API，显著降低连接开销并支持实时推送。
+- **全量日志捕获**: 基于 Log4j2 Appender 实时同步服务器控制台输出，包括核心日志及所有插件日志。
+- **深度指标采集**:
+    - **Minecraft 指标**: TPS (5s/1m/5m)、MSPT、在线人数等（集成 Spark API）。
+    - **系统指标**: CPU 使用率（进程/系统）、物理内存、JVM 内存、磁盘空间等（集成 OSHI）。
+- **历史数据存储**: 自动将性能数据存储在 SQLite 数据库中，支持客户端查询 TPS 趋势图表。
+- **管理员控制台**: 支持远程执行命令、白名单管理、服务器生命周期控制（需 Token 鉴权）。
+- **超轻量依赖**: 经过深度优化（Minimize Jar），移除冗余框架，构建产物仅约 13.5MB。
 
-## API 接口
+## 通信协议
 
-默认端口：`8080`
+默认端口：`8080` (WebSocket)
 
-| 端点 | 描述 |
-| :--- | :--- |
-| `GET /status` | 获取服务器基本信息（MOTD, 版本, 玩家数等） |
-| `GET /metrics` | 获取实时性能指标（TPS, MSPT, CPU, RAM） |
-| `GET /history` | 获取历史性能数据（支持 `?limit=N` 参数，默认 60） |
-| `GET /ping` | 检查 API 服务是否存活 |
-
-## 管理员接口 (需要 Token 验证)
-
-这些接口需要你从 `plugins/ServerSee/token.txt` 获取 Token，并在请求头中包含：
-`Authorization: Bearer serversee_你的Token`
-
-| 端点 | 方法 | 描述 | 参数 |
-| :--- | :--- | :--- | :--- |
-| `/admin/command` | `POST` | 执行控制台命令 | `command`: 要执行的命令 |
-| `/admin/restart` | `POST` | 重启服务器 | 无 |
-| `/admin/shutdown` | `POST` | 关闭服务器 | 无 |
-| `/admin/whitelist` | `GET` | 获取白名单列表 | 无 |
-| `/admin/whitelist/toggle` | `POST` | 开启/关闭白名单 | `enabled`: true/false |
-| `/admin/whitelist/add` | `POST` | 添加玩家到白名单 | `name`: 玩家 ID |
-| `/admin/whitelist/remove` | `POST` | 移出白名单 | `name`: 玩家 ID |
+所有通信通过 WebSocket 完成，支持基于 Token 的身份验证和操作审计。
 
 ## 配置文件 (`config.yml`)
 
 ```yaml
-# API 服务器监听端口
+# API 服务器监听端口 (WebSocket)
 api-port: 8080
 
 # 性能数据采集间隔 (单位：秒)
-# 采集的数据将存储在 SQLite 中用于历史查询
 collection-interval: 60
 
-# 是否在 /status 接口中输出插件列表
-show-plugins: false
+# 初始连接时同步的历史日志行数
+log-history-lines: 50
 
 # 调试模式
 debug: false
@@ -55,12 +37,14 @@ debug: false
 
 ## 技术细节
 
-- **Spark API**: 深度集成 Paper 内置的 Spark 性能分析工具。
-- **Javalin & Jetty**: 轻量级 Web 框架，提供高性能的 RESTful 服务。
+- **Java-WebSocket**: 轻量级 WebSocket 库，实现高性能实时双向通信。
+- **Spark API**: 深度集成 Paper 内置的性能分析工具。
+- **OSHI & JNA**: 跨平台硬件和系统信息采集。
+- **Log4j2**: 拦截控制台日志流实现毫秒级同步。
 - **SQLite**: 嵌入式数据库，用于持久化监控历史。
-- **SLF4J**: 规范化的日志输出，自动适配 Paper 控制台颜色。
 
 ## 开发者信息
 
+- **版本**: 1.0.0-beta.2
 - **组织**: [ServerSeeMC](https://github.com/ServerSeeMC)
 - **仓库**: [ServerSee-Plugin](https://github.com/ServerSeeMC/ServerSee-Plugin)
