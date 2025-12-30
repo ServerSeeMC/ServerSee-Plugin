@@ -6,7 +6,7 @@
 
     <groupId>cn.lemwood</groupId>
     <artifactId>serversee</artifactId>
-    <version>1.0.0-beta.3</version>
+    <version>1.0.0-beta.4</version>
     <packaging>jar</packaging>
 
     <name>ServerSee</name>
@@ -98,22 +98,10 @@
                         <configuration>
                             <minimizeJar>true</minimizeJar>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>cn.lemwood.serversee.ServerSee</mainClass>
+                                </transformer>
                             </transformers>
-                            <relocations>
-                                <relocation>
-                                    <pattern>org.java_websocket</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.websocket</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>com.google.gson</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.gson</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>oshi</pattern>
-                                    <shadedPattern>cn.lemwood.serversee.lib.oshi</shadedPattern>
-                                </relocation>
-                            </relocations>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -121,11 +109,6 @@
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
-                                        <exclude>META-INF/maven/**</exclude>
-                                        <exclude>META-INF/LICENSE*</exclude>
-                                        <exclude>META-INF/NOTICE*</exclude>
-                                        <exclude>META-INF/DEPENDENCIES</exclude>
-                                        <exclude>module-info.class</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

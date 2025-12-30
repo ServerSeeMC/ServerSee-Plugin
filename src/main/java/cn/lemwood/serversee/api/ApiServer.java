@@ -5,6 +5,7 @@ import cn.lemwood.serversee.auth.TokenManager;
 import cn.lemwood.serversee.database.DatabaseManager;
 import cn.lemwood.serversee.metrics.SparkManager;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.bukkit.Bukkit;
@@ -30,7 +31,7 @@ public class ApiServer extends WebSocketServer {
     private final SparkManager sparkManager;
     private final DatabaseManager databaseManager;
     private final TokenManager tokenManager;
-    private final Gson gson = new Gson();
+    private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
     
     private final Set<WebSocket> authenticatedSessions = ConcurrentHashMap.newKeySet();
     
@@ -41,7 +42,7 @@ public class ApiServer extends WebSocketServer {
     
     // 简易速率限制
     private final Map<String, Integer> rateLimitMap = new ConcurrentHashMap<>();
-    private static final int MAX_REQUESTS_PER_MINUTE = 120; // 提高限制，因为 WebSocket 连发较多
+    private static final int MAX_REQUESTS_PER_MINUTE = 120;
 
     public ApiServer(int port, SparkManager sparkManager, DatabaseManager databaseManager, TokenManager tokenManager) {
         super(new InetSocketAddress(port));
@@ -74,10 +75,8 @@ public class ApiServer extends WebSocketServer {
     public void onMessage(WebSocket conn, String message) {
         try {
             JsonObject request = JsonParser.parseString(message).getAsJsonObject();
-            String type = request.has("type") ? request.get("type").getAsString() : "request";
             String action = request.has("action") ? request.get("action").getAsString() : "";
             String requestId = request.has("id") ? request.get("id").getAsString() : null;
-            String token = request.has("token") ? request.get("token").getAsString() : null;
 
             // 处理心跳
             if ("ping".equals(action)) {
@@ -85,20 +84,56 @@ public class ApiServer extends WebSocketServer {
                 return;
             }
 
-            // 鉴权检查 (部分 action 需要鉴权)
+            // 鉴权检查
             boolean isAuthRequired = action.startsWith("admin/") || "metrics".equals(action) || "history".equals(action);
             if (isAuthRequired) {
-                if (token == null || !tokenManager.validate(token)) {
-                    sendResponse(conn, requestId, false, "Unauthorized", null);
+                if (!validateAuth(request)) {
+                    sendResponse(conn, requestId, false, "Unauthorized (Signature mismatch or expired)", null);
                     return;
                 }
                 authenticatedSessions.add(conn);
             }
 
-            handleAction(conn, action, requestId, request.getAsJsonObject("data"), token);
+            handleAction(conn, action, requestId, request.getAsJsonObject("data"), null);
         } catch (Exception e) {
             sendResponse(conn, null, false, "Invalid Request: " + e.getMessage(), null);
         }
+    }
+
+    private boolean validateAuth(JsonObject request) {
+        // 支持两种模式：旧的明文 Token (兼容) 和新的 HMAC 签名
+        if (request.has("token")) {
+            return tokenManager.validate(request.get("token").getAsString());
+        }
+
+        if (!request.has("signature") || !request.has("timestamp") || !request.has("nonce")) {
+            return false;
+        }
+
+        String signature = request.get("signature").getAsString();
+        long timestamp = request.get("timestamp").getAsLong();
+        String nonce = request.get("nonce").getAsString();
+        String action = request.get("action").getAsString();
+        String dataJson = request.has("data") ? gson.toJson(request.get("data")) : "";
+
+        // 1. 校验时间戳 (允许 60 秒误差)
+        long now = System.currentTimeMillis() / 1000;
+        if (Math.abs(now - timestamp) > 60) {
+            ServerSee.getInstance().getLogger().warning("请求已过期: offset=" + (now - timestamp) + "s, req=" + timestamp + ", now=" + now);
+            return false;
+        }
+
+        // 2. 构造待签名字符串: action + timestamp + nonce + data_json
+        String dataToSign = action + timestamp + nonce + dataJson;
+
+        // 3. 验证签名
+        boolean valid = tokenManager.validateSignature(signature, dataToSign);
+        if (!valid) {
+            ServerSee.getInstance().getLogger().warning("签名验证失败!");
+            ServerSee.getInstance().getLogger().warning("待签名字符串: [" + dataToSign + "]");
+            ServerSee.getInstance().getLogger().warning("收到签名: " + signature);
+        }
+        return valid;
     }
 
     private void handleAction(WebSocket conn, String action, String requestId, JsonObject data, String token) {
@@ -200,8 +235,8 @@ public class ApiServer extends WebSocketServer {
         }
         String command = data.get("command").getAsString();
         String ip = conn.getRemoteSocketAddress().getAddress().getHostAddress();
-        String tokenSnippet = (token != null && token.length() > 8) ? token.substring(0, 8) + "..." : "none";
-        ServerSee.getInstance().getLogger().info(String.format("[Audit] IP %s 使用 Token (%s) 执行了命令: %s", ip, tokenSnippet, command));
+        
+        ServerSee.getInstance().getLogger().info(String.format("[Audit] IP %s 执行了命令: %s", ip, command));
         
         Bukkit.getScheduler().runTask(ServerSee.getInstance(), () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
@@ -310,7 +345,6 @@ public class ApiServer extends WebSocketServer {
                 if (b == '\n') {
                     if (bos.size() > 0) {
                         byte[] bytes = bos.toByteArray();
-                        // 翻转字节数组，因为我们是倒着读的
                         for (int i = 0; i < bytes.length / 2; i++) {
                             byte temp = bytes[i];
                             bytes[i] = bytes[bytes.length - 1 - i];

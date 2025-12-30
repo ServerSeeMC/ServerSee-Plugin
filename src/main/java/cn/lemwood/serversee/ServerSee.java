@@ -40,6 +40,9 @@ public class ServerSee extends JavaPlugin {
         tickMonitor = new TickMonitor();
         tickMonitor.start(this);
 
+        // 检查更新
+        new UpdateChecker(this).check();
+
         // 延迟初始化 API 服务器
         getServer().getScheduler().runTask(this, () -> {
             sparkManager = new SparkManager(tickMonitor);
