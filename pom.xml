@@ -6,7 +6,7 @@
 
     <groupId>cn.lemwood</groupId>
     <artifactId>serversee</artifactId>
-    <version>1.0.0-beta.4</version>
+    <version>1.0.0-beta.5</version>
     <packaging>jar</packaging>
 
     <name>ServerSee</name>
