@@ -15,14 +15,13 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -42,13 +41,14 @@ public class ApiServer extends WebSocketServer {
     
     // 简易速率限制
     private final Map<String, Integer> rateLimitMap = new ConcurrentHashMap<>();
-    private static final int MAX_REQUESTS_PER_MINUTE = 120;
+    private final int maxRequestsPerMinute;
 
     public ApiServer(int port, SparkManager sparkManager, DatabaseManager databaseManager, TokenManager tokenManager) {
         super(new InetSocketAddress(port));
         this.sparkManager = sparkManager;
         this.databaseManager = databaseManager;
         this.tokenManager = tokenManager;
+        this.maxRequestsPerMinute = ServerSee.getInstance().getConfig().getInt("api-rate-limit", 600);
         
         // 每分钟清理一次速率限制
         Bukkit.getScheduler().runTaskTimerAsynchronously(ServerSee.getInstance(), rateLimitMap::clear, 1200L, 1200L);
@@ -58,12 +58,13 @@ public class ApiServer extends WebSocketServer {
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         String ip = conn.getRemoteSocketAddress().getAddress().getHostAddress();
         int requests = rateLimitMap.getOrDefault(ip, 0);
-        if (requests >= MAX_REQUESTS_PER_MINUTE) {
+        if (requests >= maxRequestsPerMinute) {
+            ServerSee.getInstance().getLogger().warning("IP " + ip + " 触发速率限制 (429 Too Many Requests)，连接已关闭。");
             conn.close(429, "Too Many Requests");
             return;
         }
         rateLimitMap.put(ip, requests + 1);
-        ServerSee.getInstance().getLogger().info("新的 WS 连接: " + ip);
+        ServerSee.getInstance().getLogger().info("新的 WS 连接: " + ip + " (本分钟第 " + (requests + 1) + " 次)");
     }
 
     @Override
@@ -383,10 +384,8 @@ public class ApiServer extends WebSocketServer {
         try {
             File iconFile = new File("server-icon.png");
             if (iconFile.exists()) {
-                BufferedImage image = ImageIO.read(iconFile);
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                ImageIO.write(image, "png", baos);
-                cachedIconBase64 = Base64.getEncoder().encodeToString(baos.toByteArray());
+                byte[] bytes = Files.readAllBytes(iconFile.toPath());
+                cachedIconBase64 = Base64.getEncoder().encodeToString(bytes);
                 lastIconUpdate = now;
                 return cachedIconBase64;
             }
